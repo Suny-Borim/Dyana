@@ -1,0 +1,30 @@
+{
+  "name": "diana",
+  "version": "1.0.0",
+  "description": "Bot for my Discord server little project",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Suny-Borim/Diana.git"
+  },
+  "author": "Hazel Borim Fernandes (Coffy)",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Suny-Borim/Diana/issues"
+  },
+  "homepage": "https://github.com/Suny-Borim/Diana#readme",
+  "dependencies": {
+    "@discordjs/voice": "^0.18.0",
+    "axios": "^1.7.8",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "googleapi": "^1.0.2",
+    "node-cron": "^3.0.3",
+    "node-fetch": "^3.3.2"
+  }
+}
