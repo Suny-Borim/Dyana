@@ -42,13 +42,13 @@ discordClient.on('messageCreate', async (message) => {
             let greetingMessage;
             switch (message.author.locale) {
                 case 'pt-BR':
-                    greetingMessage = `Oizinhuuuu >-<\nEu tô aqui ${message.author.username}`;
+                    greetingMessage = `Oizinhuuuu >-<\nEu tô aqui ${message.author.globalName}`;
                     break;
                 case 'en-US':
-                    greetingMessage = `Hallouuu >-<\nI'm here ${message.author.username}`;
+                    greetingMessage = `Hallouuu >-<\nI'm here ${message.author.globalName}`;
                     break;
                 default:
-                    greetingMessage = `Hallouuuu, I'm here ${message.author.username}!`;
+                    greetingMessage = `Hallouuuu, I'm here ${message.author.globalName}!`;
                     break;
             }
             message.channel.send(greetingMessage);
@@ -194,6 +194,6 @@ discordClient.on('messageCreate', async (message) => {
                 console.error("Erro ao buscar personagens:", error);
                 message.channel.send("Ocorreu um erro ao buscar os personagens.");
             }
-        }
+        } 
     }
 });
