@@ -7,3 +7,4 @@ npm install discord.js googleapi dotenv node-cron
 npm install @discordjs/voice
 npm install axios
 npm install node-fetch
+npm install neo4j-driver
