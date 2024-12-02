@@ -178,10 +178,6 @@ discordClient.on('messageCreate', async (message) => {
                         "MATCH (m:Mundo) RETURN m.nome AS nome, m.descricao AS descricao"
                     );
         
-                    if (mundoResult.records.length === 0) {
-                        return msg.channel.send("Nenhuma informação sobre o mundo encontrada.");
-                    }
-        
                     const mundo = mundoResult.records[0];
                     const nomeMundo = mundo.get("nome") || "Desconhecido";
                     const descricaoMundo = mundo.get("descricao") || "Sem descrição disponível";
@@ -199,7 +195,223 @@ discordClient.on('messageCreate', async (message) => {
                 console.error("Erro ao buscar informações:", error);
                 message.channel.send("Ocorreu um erro ao buscar as informações.");
             }
-        }        
+        } else if (command === "adm" && args[0] === "create") {
+            const senhaCorreta = process.env.SENHA_ADM;  
+            const inputSenha = args[1];
+        
+            if (!inputSenha || inputSenha.trim() !== senhaCorreta.trim()) {
+                return message.channel.send("Senha incorreta! A operação foi cancelada.");
+            }
+        
+            message.channel.send("Senha correta! Iniciando o processo de criação...");
+        
+
+            let coletarInfo = true;
+        
+            const perguntas = [
+                "Qual o nome do personagem?",
+                "Qual a idade do personagem?",
+                "Qual a sexualidade do personagem?",
+                "Conte a história do personagem.",
+                "Quais os poderes do personagem?",
+                "Qual a raça do personagem?",
+                "Qual a comida favorita do personagem?",
+                "Qual o gênero do personagem?",
+                "Quais são os pronomes do personagem?",
+                "Envie a URL da foto do personagem.",
+                "Envie a URL do gif do personagem.",
+                "Qual o nome do evento? (Opcional)",
+                "Qual a descrição do evento? (Opcional)"
+            ];
+        
+            let respostas = {};
+            let coletando = true;  
+        
+            const coletarDados = async (index = 0) => {
+                if (!coletando) {
+                    return message.channel.send("O processo foi cancelado.");
+                }
+        
+                if (index >= perguntas.length) {
+                    const session = neo4jDriver.session();
+                    try {
+                        const { nome, idade, sexualidade, historia, poderes, raca, comidaFavorita, genero, pronomes, foto, gif, eventoNome, eventoDescricao } = respostas;
+        
+                        await session.run(
+                            `CREATE (:Personagem {
+                                nome: $nome,
+                                idade: $idade,
+                                sexualidade: $sexualidade,
+                                historia: $historia,
+                                poderes: $poderes,
+                                raca: $raca,
+                                comidaFavorita: $comidaFavorita,
+                                genero: $genero,
+                                pronomes: $pronomes,
+                                foto: $foto,
+                                gif: $gif
+                            })`,
+                            respostas
+                        );
+        
+                        message.channel.send(`Personagem ${nome} criado com sucesso!`);
+        
+                        if (eventoNome && eventoDescricao) {
+                            await session.run(
+                                `CREATE (:Evento {
+                                    nome: $eventoNome,
+                                    descricao: $eventoDescricao
+                                })`,
+                                { eventoNome, eventoDescricao }
+                            );
+        
+                            message.channel.send(`Evento ${eventoNome} criado com sucesso!`);
+                        }
+        
+                    } catch (error) {
+                        console.error("Erro ao criar personagem:", error);
+                        message.channel.send("Ocorreu um erro ao tentar criar o personagem.");
+                    } finally {
+                        session.close();
+                    }
+                    return;
+                }
+        
+                const pergunta = perguntas[index];
+                message.channel.send(pergunta);
+        
+                const collector = message.channel.createMessageCollector({
+                    filter: (m) => m.author.id === message.author.id, 
+                    time: 60000,  
+                });
+        
+                collector.on("collect", async (msg) => {
+                    if (msg.content.toLowerCase() === "cancelar") {
+                        coletando = false;  
+                        collector.stop();  
+                        return message.channel.send("Processo cancelado.");
+                    }
+        
+                    respostas[pergunta] = msg.content;
+        
+                    collector.stop();
+                    coletarDados(index + 1);
+                });
+        
+                collector.on("end", (collected, reason) => {
+                    if (reason === 'time' && coletando) {
+                        message.channel.send("O tempo para responder expirou. A operação foi cancelada.");
+                    }
+                });
+            };
+            coletarDados();
+        }
+        else if (command === "adm" && args[0] === "delete") {
+            const senhaCorreta = process.env.SENHA_ADM;
+            const inputSenha = args[1];
+        
+            if (inputSenha !== senhaCorreta) {
+                return message.channel.send("Senha incorreta! A operação foi cancelada.");
+            }
+        
+            const session = neo4jDriver.session();
+            try {
+                const result = await session.run(
+                    "MATCH (p:Personagem) RETURN p.nome AS nome"
+                );
+        
+                const personagens = result.records.map((record) => record.get("nome"));
+        
+                if (personagens.length === 0) {
+                    return message.channel.send("Nenhum personagem encontrado no banco de dados.");
+                }
+        
+                const listaPersonagens = personagens
+                    .map((personagem, index) => `${index + 1}. ${personagem}`)
+                    .join("\n");
+        
+                await message.channel.send(`Escolha um personagem para deletar digitando o número correspondente, ou digite **cancelar** para cancelar a operação:\n${listaPersonagens}`);
+        
+                const collector = message.channel.createMessageCollector({
+                    filter: (m) => m.author.id === message.author.id,
+                    time: 60000,
+                });
+        
+                collector.on("collect", async (msg) => {
+                    const escolha = msg.content.toLowerCase();
+        
+                    if (escolha === "cancelar") {
+                        message.channel.send("Operação de deleção cancelada.");
+                        collector.stop();
+                        return;
+                    }
+        
+                    const escolhaNumero = parseInt(escolha, 10);
+                    if (isNaN(escolhaNumero) || escolhaNumero < 1 || escolhaNumero > personagens.length) {
+                        return msg.channel.send("Escolha inválida. Tente novamente digitando um número da lista ou **cancelar**.");
+                    }
+        
+                    const personagemEscolhido = personagens[escolhaNumero - 1];
+        
+                    await message.channel.send(`Tem certeza que deseja deletar o personagem **${personagemEscolhido}**? Responda com "sim", "não" ou "cancelar".`);
+        
+                    const confirmationCollector = message.channel.createMessageCollector({
+                        filter: (m) => m.author.id === message.author.id,
+                        time: 30000,
+                    });
+        
+                    confirmationCollector.on("collect", async (confirmMsg) => {
+                        const confirmacao = confirmMsg.content.toLowerCase();
+        
+                        if (confirmacao === "cancelar" || confirmacao === "não") {
+                            message.channel.send("Operação de deleção cancelada.");
+                            confirmationCollector.stop();
+                            collector.stop();
+                            return;
+                        }
+        
+                        if (confirmacao === "sim") {
+                            try {
+                                await session.run(
+                                    `MATCH (p:Personagem {nome: $nome}) DELETE p`,
+                                    { nome: personagemEscolhido }
+                                );
+                                message.channel.send(`Personagem **${personagemEscolhido}** deletado com sucesso!`);
+                            } catch (error) {
+                                console.error("Erro ao deletar personagem:", error);
+                                message.channel.send("Ocorreu um erro ao tentar deletar o personagem.");
+                            } finally {
+                                confirmationCollector.stop();
+                                collector.stop();
+                                session.close();
+                            }
+                        } else {
+                            message.channel.send("Resposta inválida. Operação cancelada.");
+                            confirmationCollector.stop();
+                            collector.stop();
+                        }
+                    });
+        
+                    confirmationCollector.on("end", (collected, reason) => {
+                        if (reason === "time") {
+                            message.channel.send("Tempo expirado. A operação foi cancelada.");
+                        }
+                    });
+                });
+        
+                collector.on("end", (collected, reason) => {
+                    if (reason === "time") {
+                        message.channel.send("Tempo expirado. A operação foi cancelada.");
+                    }
+                });
+        
+            } catch (error) {
+                console.error("Erro ao listar personagens:", error);
+                message.channel.send("Ocorreu um erro ao tentar listar os personagens.");
+            }
+        }
+        
+            
         }
         
     }
