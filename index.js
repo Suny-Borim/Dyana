@@ -2,6 +2,7 @@ import { config } from "dotenv";
 import { Client, GatewayIntentBits } from "discord.js";
 import { joinVoiceChannel, getVoiceConnection } from "@discordjs/voice";
 import neo4j from "neo4j-driver";
+import fs from 'fs';
 
 config();
 
@@ -15,7 +16,6 @@ const discordClient = new Client({
 });
 
 const prefix = '!Dyana';
-
 const neo4jDriver = neo4j.driver(
     process.env.NEO4J_URI,
     neo4j.auth.basic('neo4j', process.env.NEO4J_PASSWORD)
@@ -213,11 +213,11 @@ discordClient.on('messageCreate', async (message) => {
                 "Qual a idade do personagem?",
                 "Qual a sexualidade do personagem?",
                 "Conte a história do personagem.",
-                "Quais os poderes do personagem?",
+                "Quais as habilidades do personagem?",
                 "Qual a raça do personagem?",
                 "Qual a comida favorita do personagem?",
                 "Qual o gênero do personagem?",
-                "Quais são os pronomes do personagem?",
+                "Quais são os pronomes do personagem? digite por exemplo: "+"Ela/Dela",
                 "Envie a URL da foto do personagem.",
                 "Envie a URL do gif do personagem.",
                 "Qual o nome do evento? (Opcional)",
@@ -409,9 +409,100 @@ discordClient.on('messageCreate', async (message) => {
                 console.error("Erro ao listar personagens:", error);
                 message.channel.send("Ocorreu um erro ao tentar listar os personagens.");
             }
-        }
-        
+        }  else if (command === "ligações") {
+            try {
+                const result = await session.run(`
+                  MATCH ()-[r]->()
+                  RETURN DISTINCT type(r) AS relationship
+                `);
+          
+                if (result.records.length === 0) {
+                  message.reply("Não há relacionamentos no banco.");
+                  return;
+                }
+          
+                let response = 'Tipos de ligações:\n';
+                result.records.forEach((record, index) => {
+                  response += `${index + 1}. ${record.get('relationship')}\n`;
+                });
+          
+                const sentMessage = await message.reply(`${message.author}, ${response}`);
+          
+                const filter = (response) => response.author.id === message.author.id;
+                const collector = message.channel.createMessageCollector({ filter, time: 15000 });
+          
+                collector.on('collect', async (responseMessage) => {
+                  const selectedNumber = parseInt(responseMessage.content);
+          
+                  if (isNaN(selectedNumber) || selectedNumber < 1 || selectedNumber > result.records.length) {
+                    return message.reply("Por favor, escolha um número válido da lista.");
+                  }
+          
+                  const selectedRelationship = result.records[selectedNumber - 1].get('relationship');
+          
+                  const relationshipResult = await session.run(`
+                    MATCH (a)-[r:${selectedRelationship}]->(b)
+                    RETURN a, type(r) AS relationship, b
+                  `);
+          
+                  if (relationshipResult.records.length === 0) {
+                    return message.reply(`Não há ligações do tipo ${selectedRelationship} no banco.`);
+                  }
+          
+                  let linksResponse = `Ligações de tipo ${selectedRelationship}:\n`;
+                  relationshipResult.records.forEach((record, index) => {
+                    const startNode = record.get('a').properties.descricao || record.get('a').properties.nome || `Node ${record.get('a').identity}`;
+                    const endNode = record.get('b').properties.descricao || record.get('b').properties.nome || `Node ${record.get('b').identity}`;
+          
+                    const startNodeDescription = record.get('a').properties.descricao ? `Descrição: ${record.get('a').properties.descricao}` : '';
+                    const startNodeName = record.get('a').properties.nome ? `Nome: ${record.get('a').properties.nome}` : '';
+          
+                    const endNodeDescription = record.get('b').properties.descricao ? `Descrição: ${record.get('b').properties.descricao}` : '';
+                    const endNodeName = record.get('b').properties.nome ? `Nome: ${record.get('b').properties.nome}` : '';
+          
+                    linksResponse += `${index + 1}. ${startNodeDescription} ${startNodeName} -> ${record.get('relationship')} -> ${endNodeDescription} ${endNodeName}\n`;
+                  });
+          
+                  message.reply(`${message.author}, ${linksResponse}`);
+                  collector.stop();
+                });
+              } catch (error) {
+                console.error(error);
+                message.reply("Ocorreu um erro ao buscar as ligações.");
+              }
+            }   else if (command === "help") {
+                message.channel.send("[Comandos disponíveis (●'◡'●)]\n\n" +
+                    "    [oi]: Testa o funcionamento do bot\n" +
+                    "    [mundo]: Entrega todas as informações sobre o mundo de nyteris\n" +
+                    "    [personagens]: Gera uma lista dos personagens cadastrados, podendo escolher um pela sua numeração\n" +
+                    "    [ligações]: Gera uma lista com as ligações feitas para entender melhor quem faz o que e etc\n\n" +
+                    "    [Comandos disponíveis somente para adms ╰(*°▽°*)╯]\n\n" +
+                    "        [adm create 'senha']: Faz a criação de personagem pelo chat do discord\n" +
+                    "        [adm delete 'senha']: Deleta a existência de um personagem no banco\n"
+                );
+            }  else if(command === "adm" && args[0] === "export") {
+
+                const senhaCorreta = process.env.SENHA_ADM;
+                const inputSenha = args[1];
             
+                if (inputSenha !== senhaCorreta) {
+                    return message.channel.send("Senha incorreta! A operação foi cancelada.");
+                }
+            
+                const session = neo4jDriver.session();
+                try {
+                    const result = await session.run('MATCH (n) RETURN n LIMIT 100'); 
+                    const nodes = result.records.map(record => record.get('n'));
+                    fs.writeFileSync('Neterys.json', JSON.stringify(nodes, null, 2));
+                    return 'Dados exportados com sucesso!';
+                } catch (error) {
+                    console.error('Erro ao exportar dados:', error);
+                    return 'Erro ao exportar dados.';
+                } finally {
+                    await session.close();
+                }
+            }
+
         }
         
     }
