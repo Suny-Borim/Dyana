@@ -494,6 +494,7 @@ discordClient.on('messageCreate', async (message) => {
                     const result = await session.run('MATCH (n) RETURN n LIMIT 100'); 
                     const nodes = result.records.map(record => record.get('n'));
                     fs.writeFileSync('Neterys.json', JSON.stringify(nodes, null, 2));
+                    message.channel.send(`${message.author}, exportação realizada com sucesso! 🚀`);
                     return 'Dados exportados com sucesso!';
                 } catch (error) {
                     console.error('Erro ao exportar dados:', error);
