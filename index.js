@@ -36,23 +36,7 @@ discordClient.on('messageCreate', async (message) => {
 
         const session = neo4jDriver.session();
 
-        if (command === 'oi') {
-            let greetingMessage;
-            switch (message.author.locale) {
-                case 'pt-BR':
-                    greetingMessage = `Oizinhuuuu >-<\nEu tô aqui ${message.author.globalName}`;
-                    break;
-                case 'en-US':
-                    greetingMessage = `Hallouuu >-<\nI'm here ${message.author.globalName}`;
-                    break;
-                default:
-                    greetingMessage = `Hallouuuu, I'm here ${message.author.globalName}!`;
-                    break;
-            }
-            message.channel.send(greetingMessage);
-        }
-
-        else if (command === "personagens") {
+     if (command === "personagens") {
             const neo4jSession = neo4jDriver.session();
         
             try {
@@ -181,8 +165,9 @@ discordClient.on('messageCreate', async (message) => {
                     const mundo = mundoResult.records[0];
                     const nomeMundo = mundo.get("nome") || "Desconhecido";
                     const descricaoMundo = mundo.get("descricao") || "Sem descrição disponível";
-        
-                    await msg.channel.send(`**História de ${nomeMundo}:**\n${descricaoMundo}`);
+                    const mensagemCompleta = `**História de ${nomeMundo}:**\n${descricaoMundo}`;
+                    
+                    await global.sendLongMessage(msg.channel, mensagemCompleta);
         
                     collector.stop();
                 });
@@ -205,9 +190,6 @@ discordClient.on('messageCreate', async (message) => {
         
             message.channel.send("Senha correta! Iniciando o processo de criação...");
         
-
-            let coletarInfo = true;
-        
             const perguntas = [
                 "Qual o nome do personagem?",
                 "Qual a idade do personagem?",
@@ -223,7 +205,27 @@ discordClient.on('messageCreate', async (message) => {
                 "Qual o nome do evento? (Opcional)",
                 "Qual a descrição do evento? (Opcional)"
             ];
-        
+            
+            const validadores = {
+                "Qual o nome do personagem?": (resposta) => resposta.length > 0,
+                "Qual a idade do personagem?": (resposta) => !isNaN(resposta) && Number(resposta) > 0,
+                "Qual a sexualidade do personagem?": (resposta) => resposta.length > 0,
+                "Conte a história do personagem.": (resposta) => resposta.length > 10,
+                "Quais as habilidades do personagem?": (resposta) => resposta.length > 0,
+                "Qual a raça do personagem?": (resposta) => resposta.length > 0,
+                "Qual a comida favorita do personagem?": (resposta) => resposta.length > 0,
+                "Qual o gênero do personagem?": (resposta) => resposta.length > 0 && ["masculino", "feminino", "neutro"].includes(resposta.toLowerCase()),
+                "Quais são os pronomes do personagem? Digite por exemplo: 'Ela/Dela'": (resposta) =>{
+                    const pronomesAceitos = ["Ela/Dela", "Ele/Dele", "Elu/Delu"];
+                    const pronomes = resposta.split(",").map(pronomes => pronomes.trim());
+                    return pronomes.every(pronome => pronomesAceitos.includes(pronome));
+                },
+                "Envie a URL da foto do personagem.": (resposta) => /^(http|https):\/\/[^ "]+$/.test(resposta),
+                "Envie a URL do gif do personagem.": (resposta) => /^(http|https):\/\/[^ "]+$/.test(resposta),
+                "Qual o nome do evento? (Opcional)": () => true,
+                "Qual a descrição do evento? (Opcional)": () => true,
+            };
+
             let respostas = {};
             let coletando = true;  
         
@@ -231,12 +233,59 @@ discordClient.on('messageCreate', async (message) => {
                 if (!coletando) {
                     return message.channel.send("O processo foi cancelado.");
                 }
-        
                 if (index >= perguntas.length) {
-                    const session = neo4jDriver.session();
-                    try {
-                        const { nome, idade, sexualidade, historia, poderes, raca, comidaFavorita, genero, pronomes, foto, gif, eventoNome, eventoDescricao } = respostas;
-        
+
+                for (let pergunta in respostas) {
+                    const resposta = respostas[pergunta];
+                    if (!validadores[pergunta](resposta)) {
+                        if (pergunta.includes("(Opcional)") && !resposta) continue;
+                        return message.channel.send(`A resposta para "${pergunta}" é inválida. Por favor, revise. Processo cancelado.`);
+                    }
+                }
+                const session = neo4jDriver.session();
+                try {
+                    const { 
+                        "Qual o nome do personagem?": nome, 
+                        "Qual a idade do personagem?": idade, 
+                        "Qual a sexualidade do personagem?": sexualidade, 
+                        "Conte a história do personagem.": historia, 
+                        "Quais as habilidades do personagem?": poderes, 
+                        "Qual a raça do personagem?": raca, 
+                        "Qual a comida favorita do personagem?": comidaFavorita, 
+                        "Qual o gênero do personagem?": genero, 
+                        "Quais são os pronomes do personagem? Digite por exemplo: 'Ela/Dela'": pronomes, 
+                        "Envie a URL da foto do personagem.": foto, 
+                        "Envie a URL do gif do personagem.": gif, 
+                        "Qual o nome do evento? (Opcional)": eventoNome, 
+                        "Qual a descrição do evento? (Opcional)": eventoDescricao 
+                    } = respostas;
+                    const existingGenero = await session.run(
+                        `MATCH (g:Genero {nome: $genero}) RETURN g`,
+                        { genero: genero.charAt(0).toUpperCase() + genero.slice(1).toLowerCase() }
+                    );
+                    
+                    if (existingGenero.records.length === 0) {
+                        return message.channel.send(`O gênero "${genero}" não é válido ou não está cadastrado no banco.`);
+                    }
+    
+                    const existingPronomes = await session.run(
+                        `MATCH (p:Pronomes {nome: $pronomes}) RETURN p`,
+                        { pronomes: pronomes }
+                    );
+    
+                    if (existingPronomes.records.length === 0) {
+                        return message.channel.send(`Os pronomes "${pronomes}" não são válidos ou não estão cadastrados no banco.`);
+                    }
+    
+                    const existingPersonagem = await session.run(
+                        `MATCH (p:Personagem {nome: $nome}) RETURN p`,
+                        { nome }
+                    );
+    
+                    if (existingPersonagem.records.length > 0) {
+                        return message.channel.send(`Já existe um personagem com o nome "${nome}". O processo foi cancelado.`);
+                    }
+    
                         await session.run(
                             `CREATE (:Personagem {
                                 nome: $nome,
@@ -503,7 +552,16 @@ discordClient.on('messageCreate', async (message) => {
                     await session.close();
                 }
             }
-
+            global.sendLongMessage = async (channel, content) => {
+                const limit = 2000; 
+                if (content.length <= limit) {
+                    await channel.send(content);
+                } else {
+                    for (let i = 0; i < content.length; i += limit) {
+                        await channel.send(content.slice(i, i + limit));
+                    }
+                }
+            };
         }
         
     }
